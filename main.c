@@ -117,6 +117,7 @@ Node* create_Node() {
     Node* newNode = (Node*)malloc(sizeof(Node)); // create a new node
     newNode->true_node = NULL;
     newNode->false_node = NULL;
+    newNode->result = -1;
     return newNode;
 
 }
@@ -161,10 +162,6 @@ Node* build_tree(unsigned char test_image[][NUM_PIXELS], unsigned char* test_lab
         }
     }
     if (number_of_elements == 1) {
-        if (node == NULL) {
-            node = create_Node();
-        }
-
         node->result = test_label[0];
         return node; // filling in the tree
     }
@@ -191,16 +188,14 @@ Node* build_tree(unsigned char test_image[][NUM_PIXELS], unsigned char* test_lab
         }
     }
     // building a tree
-    if (node == NULL) {
-        node = create_Node();
-    }
+
+    Node* new_node = NULL;
+    new_node = create_Node();
 
     if (best_gain > 0) {
         // this is splitting on two branches
-        node->true_node = (struct Node*)create_Node();
-        build_tree(true_images_best, true_labels_best, (Node*)node->true_node, num_true_images_best); // it is a node
-        node->false_node = (struct Node*)create_Node();
-        build_tree(false_images_best, false_labels_best, (Node*)node->false_node, num_false_images_best);
+        node->true_node = (struct Node*)build_tree(true_images_best, true_labels_best, new_node, num_true_images_best); // it is a node
+        node->false_node = (struct Node*)build_tree(false_images_best, false_labels_best, new_node, num_false_images_best);
 
         node->feather = best_feather;
 
@@ -243,6 +238,8 @@ void main() {
     unsigned char label_trial[4] = {1, 2, 3, 4};
 
     Node* root = NULL;
+    root = create_Node();
     root = build_tree(images_trial, label_trial, root, NUM_IMAGES);
+
     freeTree(root);
 }
