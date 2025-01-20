@@ -3,11 +3,35 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "includes/mnist_main.h"
+//#include "includes/mnist_main.h"
 
 
 #define ADDRESS_TRAIN "data/train-images.idx3-ubyte"
 #define ADDRESS_TRAIN_LABEL "data/train-labels.idx1-ubyte"
+
+#define NUM_IMAGES 200
+#define NUM_PIXELS 784
+
+// Функция для загрузки изображений MNIST
+void load_mnist_images(const char *filename, unsigned char images[NUM_IMAGES][NUM_PIXELS]) {
+    FILE *file = fopen(filename, "rb");
+    if (!file) {
+        perror("Cannot open file");
+        exit(EXIT_FAILURE);
+    }
+
+    fseek(file, 16, SEEK_SET); // Пропускаем заголовок (16 байт)
+    fread(images, sizeof(unsigned char), NUM_IMAGES * NUM_PIXELS, file);
+    fclose(file);
+}
+
+void load_mnist_labels(const char *filename, unsigned char* labels) {
+    FILE *file = fopen(filename, "rb");
+
+    fseek(file, 8, SEEK_SET); // Пропускаем заголовок (8 байт)
+    fread(labels, sizeof(unsigned char), NUM_IMAGES, file);
+    fclose(file);
+}
 
 int max_num(unsigned char* data, int size) {
     int max = 0;
@@ -47,14 +71,15 @@ double entropy(unsigned char* data, int size) {
     free(bin_count);
     return -entropy;
 }
+typedef struct Node Node;
 
-typedef struct
+struct Node
 {
     int feather; // this is the best column for splitting
     int result; // possible answer for image on this node
-    struct Node* true_node;
-    struct Node* false_node;
-} Node;
+    Node* true_node;
+    Node* false_node;
+};
 
 
 // must add feather, because look at one determinant column
@@ -196,7 +221,6 @@ Node* build_tree(unsigned char test_image[][NUM_PIXELS], unsigned char* test_lab
         // this is splitting on two branches
         node->true_node = (struct Node*)build_tree(true_images_best, true_labels_best, new_node, num_true_images_best); // it is a node
         node->false_node = (struct Node*)build_tree(false_images_best, false_labels_best, new_node, num_false_images_best);
-
         node->feather = best_feather;
 
         return node;
@@ -205,9 +229,19 @@ Node* build_tree(unsigned char test_image[][NUM_PIXELS], unsigned char* test_lab
     return node;
 }
 
-void predict(Node* node, unsigned char* image) {
+int predict(Node* tree, unsigned char* image) {
     // I have a decision_tree and I want to say, what num on image is
     // I have to go around the tree and come to the end node
+    if (tree->result != -1) {
+        return tree->result;
+    }
+    else {
+        Node* branch = tree->false_node;
+        if (image[tree->feather] > 127) { // it is true
+            branch = tree->true_node;
+        }
+        return predict(branch, image);
+    }
 }
 
 void freeTree(Node* root) {
@@ -222,8 +256,8 @@ void main() {
     unsigned char images[NUM_IMAGES][NUM_PIXELS];
     unsigned char labels[NUM_IMAGES];
 
-    //load_mnist_images(ADDRESS_TRAIN, images);
-    //load_mnist_labels(ADDRESS_TRAIN_LABEL, labels);
+    load_mnist_images(ADDRESS_TRAIN, images);
+    load_mnist_labels(ADDRESS_TRAIN_LABEL, labels);
 
     //for (int i = 0; i < NUM_PIXELS; i++) {
         //printf("%1.1hhu ", images[2][i]);
@@ -231,15 +265,19 @@ void main() {
     //}
     //printf("%d \n", labels[2]);
 
-    unsigned char images_trial[4][4] = {{240, 12, 67, 123},
-                                        {173, 200, 1, 255},
-                                        {8, 9, 10, 112},
-                                        {46, 12, 34, 12}};
-    unsigned char label_trial[4] = {1, 2, 3, 4};
+    //unsigned char images_trial[4][4] = {{240, 12, 67, 123},
+                                        //{173, 200, 1, 255},
+                                        //{8, 9, 10, 112},
+                                        //{46, 12, 34, 12}};
+    //unsigned char label_trial[4] = {1, 2, 3, 4};
 
     Node* root = NULL;
     root = create_Node();
-    root = build_tree(images_trial, label_trial, root, NUM_IMAGES);
+    root = build_tree(images, labels, root, NUM_IMAGES);
+
+    unsigned char images_trial[784] = {0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 185, 160, 254, 254, 254, 254, 254, 254, 254, 254, 150, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 185, 160, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 150, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 222, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 223, 182, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 92, 224, 232, 222, 114, 160, 76, 0, 92, 224, 232, 254, 254, 254, 254, 254, 162, 166, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 92, 229, 243, 254, 254, 254, 254, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 158, 254, 254, 254, 254, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 247, 254, 254, 254, 247, 177, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 119, 254, 254, 254, 150, 29, 149, 76, 0, 135, 239, 254, 254, 254, 207, 143, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 247, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 252, 249, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 225, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 252, 249, 95, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 245, 232, 95, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 254, 254, 254, 254, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 225, 254, 254, 254, 178, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 254, 254, 254, 254, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 254, 254, 254, 254, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 225, 254, 254, 254, 178, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 150, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76};
+    int answer = predict(root, images_trial); // to get answer
+    printf("%d predict\n", answer);
 
     freeTree(root);
 }
