@@ -4,16 +4,16 @@
 #include <stdio.h>
 
 //#include "includes/mnist_main.h"
-#include "includes/main_bmp.h"
+
 
 #define ADDRESS_TRAIN "data/train-images.idx3-ubyte"
 #define ADDRESS_TRAIN_LABEL "data/train-labels.idx1-ubyte"
 
-#define NUM_IMAGES 4
+#define NUM_IMAGES 200
 #define NUM_PIXELS 784
 
 // Функция для загрузки изображений MNIST
-void load_mnist_images(const char *filename, unsigned char **images) {
+void load_mnist_images(const char *filename, unsigned char images[NUM_IMAGES][NUM_PIXELS]) {
     FILE *file = fopen(filename, "rb");
     if (!file) {
         perror("Cannot open file");
@@ -32,7 +32,6 @@ void load_mnist_labels(const char *filename, unsigned char* labels) {
     fread(labels, sizeof(unsigned char), NUM_IMAGES, file);
     fclose(file);
 }
-
 
 int max_num(unsigned char* data, int size) {
     int max = 0;
@@ -78,16 +77,17 @@ struct Node
 {
     int feather; // this is the best column for splitting
     int result; // possible answer for image on this node
+    unsigned char value; // separating value
     Node* true_node;
     Node* false_node;
 };
 
 
 // must add feather, because look at one determinant column
-void split_data(unsigned char **test_image, unsigned char* test_label,\
-    int feature, unsigned char **true_images, int* num_true_images,\
-    unsigned char **false_images, int* num_false_images,\
-    unsigned char* true_labels, unsigned char* false_labels, int num_of_images)
+void split_data(unsigned char test_image[][NUM_PIXELS], unsigned char* test_label,\
+    int feature, unsigned char (*true_images)[NUM_PIXELS], int* num_true_images,\
+    unsigned char (*false_images)[NUM_PIXELS], int* num_false_images,\
+    unsigned char* true_labels, unsigned char* false_labels, int num_of_images, unsigned char separating_value)
 {
     // feature - number of column
     // next I find columns, that pixels > 0.5 = true, and < 0.5 = false
@@ -103,7 +103,7 @@ void split_data(unsigned char **test_image, unsigned char* test_label,\
     for(int i = 0; i < num_of_images; i++)
     {
         // test_image[i][feature] - elements by one column
-        if (test_image[i][feature] > 127) // it mens 1
+        if (test_image[i][feature] <= separating_value) // it mens 1
         {
             true_pixels[index_for_true] = i;
             index_for_true++;
@@ -144,47 +144,35 @@ Node* create_Node() {
     newNode->true_node = NULL;
     newNode->false_node = NULL;
     newNode->result = -1;
+    newNode->value = 0;
     return newNode;
 
 }
 
-Node* build_tree(unsigned char **test_image, unsigned char* test_label,\
+Node* build_tree(unsigned char test_image[][NUM_PIXELS], unsigned char* test_label,\
     Node* node, int num_of_images)
 {
     int number_of_elements = 0;
     unsigned char prev_ele = 0;
     int best_gain = 0; // the best information gain
+    unsigned char best_separating_value = 0;
     double current_entropy = entropy(test_label, num_of_images);
     int best_feather = 0; // I will find the best splits and remember num of column
 
-    unsigned char **true_images = (unsigned char **)malloc(num_of_images * sizeof(unsigned char*)); // num_of_images is the sup of true and false images
-    for (int i = 0; i < num_of_images; i++) {
-        true_images[i] = (unsigned char *)malloc(NUM_PIXELS * sizeof(unsigned char));
-    }
-
+    unsigned char true_images[num_of_images][NUM_PIXELS]; // num_of_images is the sup of true and false images
     int num_true_images = 0;
 
-    unsigned char **false_images = (unsigned char **)malloc(num_of_images * sizeof(unsigned char*));
-    for (int i = 0; i < num_of_images; i++) {
-        false_images[i] = (unsigned char *)malloc(NUM_PIXELS * sizeof(unsigned char));
-    }
+    unsigned char false_images[num_of_images][NUM_PIXELS];
     int num_false_images = 0;
 
-    unsigned char *true_labels = (unsigned char *)malloc(num_of_images * sizeof(unsigned char));
-    unsigned char *false_labels = (unsigned char *)malloc(num_of_images * sizeof(unsigned char));
-
+    unsigned char true_labels[num_of_images];
+    unsigned char false_labels[num_of_images];
 
     // data for best split
-    unsigned char **true_images_best = (unsigned char **)malloc(num_of_images * sizeof(unsigned char*)); // num_of_images is the sup of true and false images
-    for (int i = 0; i < num_of_images; i++) {
-        true_images_best[i] = (unsigned char *)malloc(NUM_PIXELS * sizeof(unsigned char));
-    }
-    unsigned char **false_images_best = (unsigned char **)malloc(num_of_images * sizeof(unsigned char*)); // num_of_images is the sup of true and false images
-    for (int i = 0; i < num_of_images; i++) {
-        false_images_best[i] = (unsigned char *)malloc(NUM_PIXELS * sizeof(unsigned char));
-    }
-    unsigned char *true_labels_best = (unsigned char *)malloc(num_of_images * sizeof(unsigned char));
-    unsigned char *false_labels_best = (unsigned char *)malloc(num_of_images * sizeof(unsigned char));
+    unsigned char true_images_best[num_of_images][NUM_PIXELS];
+    unsigned char false_images_best[num_of_images][NUM_PIXELS];
+    unsigned char true_labels_best[num_of_images];
+    unsigned char false_labels_best[num_of_images];
     int num_true_images_best = 0;
     int num_false_images_best = 0;
 
@@ -201,31 +189,33 @@ Node* build_tree(unsigned char **test_image, unsigned char* test_label,\
             prev_ele = test_label[i];
         }
     }
-    if (number_of_elements == 1) {
+    if (number_of_elements == 1) { // do not go to this condition
         node->result = test_label[0];
-
         return node; // filling in the tree
     }
 
     for (int i = 0; i < NUM_PIXELS; i++) {
-        split_data(test_image, test_label, i, true_images,\
-            &num_true_images, false_images, &num_false_images, true_labels, false_labels, num_of_images);
-        double true_entropy = entropy(true_labels, num_true_images);
-        double false_entropy = entropy(false_labels, num_false_images);
+        for (int j = 0; j < num_of_images; j++) {
+            split_data(test_image, test_label, i, true_images,\
+                &num_true_images, false_images, &num_false_images, true_labels, false_labels, num_of_images, test_image[j][i]);
+            double true_entropy = entropy(true_labels, num_true_images);
+            double false_entropy = entropy(false_labels, num_false_images);
 
 
-        double p = (double)num_true_images / num_of_images;
-        double gain = current_entropy - p * true_entropy - (1 - p) * false_entropy;
-        if (gain > best_gain) {
-            // I must remember the best split
-            best_gain = gain;
-            best_feather = i;
-            memcpy(true_images_best, true_images, sizeof(true_images));
-            memcpy(false_images_best, false_images, sizeof(false_images));
-            memcpy(true_labels_best, true_labels, sizeof(true_labels));
-            memcpy(false_labels_best, false_labels, sizeof(false_labels));
-            num_true_images_best = num_true_images;
-            num_false_images_best = num_false_images;
+            double p = (double)num_true_images / num_of_images;
+            double gain = current_entropy - p * true_entropy - (1 - p) * false_entropy;
+            if (gain > best_gain) {
+                // I must remember the best split
+                best_gain = gain;
+                best_feather = i;
+                best_separating_value = test_image[j][i];
+                memcpy(true_images_best, true_images, sizeof(true_images));
+                memcpy(false_images_best, false_images, sizeof(false_images));
+                memcpy(true_labels_best, true_labels, sizeof(true_labels));
+                memcpy(false_labels_best, false_labels, sizeof(false_labels));
+                num_true_images_best = num_true_images;
+                num_false_images_best = num_false_images;
+            }
         }
     }
     // building a tree
@@ -238,6 +228,7 @@ Node* build_tree(unsigned char **test_image, unsigned char* test_label,\
         node->true_node = (struct Node*)build_tree(true_images_best, true_labels_best, new_node, num_true_images_best); // it is a node
         node->false_node = (struct Node*)build_tree(false_images_best, false_labels_best, new_node, num_false_images_best);
         node->feather = best_feather;
+        node->value = best_separating_value;
 
         return node;
     }
@@ -269,24 +260,42 @@ void freeTree(Node* root) {
 }
 
 void main() {
-    unsigned char **images = (unsigned char **)malloc(NUM_IMAGES* sizeof(unsigned char*)); // num_of_images is the sup of true and false images
-    for (int i = 0; i < NUM_IMAGES; i++) {
-        images[i] = (unsigned char *)malloc(NUM_PIXELS * sizeof(unsigned char));
-    }
-    unsigned char *labels = (unsigned char *)malloc(NUM_IMAGES * sizeof(unsigned char));
+    unsigned char images[NUM_IMAGES][NUM_PIXELS];
+    unsigned char labels[NUM_IMAGES];
 
     load_mnist_images(ADDRESS_TRAIN, images);
     load_mnist_labels(ADDRESS_TRAIN_LABEL, labels);
+
+    // converting for black and white without gray
+    for (int i = 0; i < NUM_IMAGES; i++) {
+        for (int j = 0; j < NUM_PIXELS; j++) {
+            if (images[i][j] > 127) {
+                images[i][j] = 1;
+            }
+            else {
+                images[i][j] = 0;
+            }
+        }
+    }
+
+    //for (int i = 0; i < NUM_PIXELS; i++) {
+        //printf("%1.1hhu ", images[300][i]);
+        //if ((i+1) % 28 == 0) putchar('\n');
+    //}
+    //printf("%d \n", labels[300]);
+
+    //unsigned char images_trial[4][4] = {{240, 12, 67, 123},
+                                        //{173, 200, 1, 255},
+                                        //{8, 9, 10, 112},
+                                        //{46, 12, 34, 12}};
+    //unsigned char label_trial[4] = {1, 2, 3, 4};
 
     Node* root = NULL;
     root = create_Node();
     root = build_tree(images, labels, root, NUM_IMAGES);
 
-
-    //unsigned char image_trial[784] = {0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 185, 160, 254, 254, 254, 254, 254, 254, 254, 254, 150, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 185, 160, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 150, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 222, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 223, 182, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 92, 224, 232, 222, 114, 160, 76, 0, 92, 224, 232, 254, 254, 254, 254, 254, 162, 166, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 92, 229, 243, 254, 254, 254, 254, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 158, 254, 254, 254, 254, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 247, 254, 254, 254, 247, 177, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 119, 254, 254, 254, 150, 29, 149, 76, 0, 135, 239, 254, 254, 254, 207, 143, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 247, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 252, 249, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 225, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 252, 249, 95, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 245, 232, 95, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 254, 254, 254, 254, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 225, 254, 254, 254, 178, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 254, 254, 254, 254, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 254, 254, 254, 254, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 225, 254, 254, 254, 178, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 150, 29, 149, 76, 0, 29, 149, 76, 0, 29, 149, 76};
-
-    //int answer = predict(root, image_trial); // to get answer
-    //printf("%d predict\n", answer);
-
-    freeTree(root);
+    //six
+    unsigned char image_for_find[784] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    int answer = predict(root, image_for_find); // to get answer
+    printf("%d predict\n", answer);
 }
